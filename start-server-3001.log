@@ -1,0 +1,17 @@
+
+> compliagent@0.1.0 dev C:\Users\WIN-11\Desktop\client website\CompliAgent
+> next dev "-p" "3001"
+
+   ▲ Next.js 15.5.9
+   - Local:        http://localhost:3001
+   - Network:      http://192.168.56.1:3001
+   - Environments: .env
+
+ ✓ Starting...
+ ✓ Ready in 3s
+ ○ Compiling / ...
+ ✓ Compiled / in 1271ms (531 modules)
+ GET / 307 in 1724ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 1676ms (699 modules)
+ GET /dashboard 200 in 2846ms
