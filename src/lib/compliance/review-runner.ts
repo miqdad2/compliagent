@@ -238,11 +238,11 @@ export function generateTechnicalReview(documents: ReviewDocument[], options: Re
       minimumPackage
         ? [
           "Client minimum assessment:",
-          "1. Doc. 4 vs Doc. 1 Specifications with clause/sub-clause source references and contractor missing-information actions.",
-          "2. Weightage from 1-10 for partially complied, ambiguous, and not-proven items.",
-          "3. Applicable Doc. 2 technical, functional, and standards requirements compared against Doc. 4.",
-          "4. Doc. 4 speaker power supply technicality compared with relevant Doc. 3 sections.",
-          "5. Conservative conclusion: technically accepted, accepted with conditions, or rejected; includes cost-effectiveness note when evidence shows significant over-specification."
+          "1. Compare Doc. 4, the proposed speaker, with Doc. 1 Specifications and provide a detailed clause/sub-clause breakdown for all technical and functional aspects as complied, partially complied, or not complied, including contractor missing-information reasoning before resubmission.",
+          "2. List Doc. 1 aspects that are partly met by Doc. 4 or ambiguous and assign weightage from 1-10, where 1 is least complied and 10 is fully complied.",
+          "3. Identify applicable Doc. 2 technical, functional, and standards clauses/sub-clauses for this type of active speaker, compare Doc. 4 against those parameters, and state complied, partially complied, or not complied with contractor missing-information reasoning.",
+          "4. Compare Doc. 4 proposed speaker power supply technicality with relevant Doc. 3 sections and provide a detailed technical and functional breakdown of complied, partially complied, and not complied aspects.",
+          "5. Provide an unambiguous conclusion: Technically Accepted, Accepted with Conditions, or Rejected / Not Technically Accepted, including a cost-effective alternative note if Doc. 4 significantly exceeds specifications without sacrificing quality."
         ].join("\n")
         : `Compared ${requirementDocuments.length} requirement document${requirementDocuments.length === 1 ? "" : "s"} against ${evidenceDocuments.length} evidence document${evidenceDocuments.length === 1 ? "" : "s"}.`
     ]

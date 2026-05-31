@@ -33,8 +33,37 @@ export default async function ProjectsPage() {
               No projects found. Create a project after Supabase Auth and profiles are configured.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+            <>
+              <div className="space-y-3 md:hidden">
+                {projects.map((project) => (
+                  <article key={project.id} className="rounded-md border p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <Link className="font-medium hover:underline" href={`/projects/${project.id}`}>
+                          {project.name}
+                        </Link>
+                        <p className="mt-1 text-sm text-muted-foreground">{project.client_name}</p>
+                      </div>
+                      <ProjectStatusBadge status={project.status} />
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Discipline: </span>
+                        {project.discipline}
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Review type: </span>
+                        {project.review_type}
+                      </div>
+                    </div>
+                    <div className="mt-4 flex justify-end">
+                      <ProjectDeleteButton projectId={project.id} projectName={project.name} />
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
+              <table className="min-w-[760px] w-full text-left text-sm">
                 <thead className="border-b text-xs uppercase text-muted-foreground">
                   <tr>
                     <th className="py-3 pr-4">Project</th>
@@ -68,7 +97,8 @@ export default async function ProjectsPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

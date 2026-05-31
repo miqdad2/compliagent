@@ -21,7 +21,7 @@ export default async function DashboardLayout({
   return (
     <div className="min-h-screen lg:flex">
       <AppSidebar />
-      <main className="flex-1">
+      <main className="min-w-0 flex-1">
         <div className="border-b bg-white px-4 py-4 lg:px-8">
           <p className="text-sm text-muted-foreground">
             CompliAgent assists technical reviewers. Final approval remains with the responsible engineer or reviewer.
@@ -37,7 +37,7 @@ export default async function DashboardLayout({
             {profileError}
           </div>
         ) : null}
-        <div className="px-4 py-6 lg:px-8">{children}</div>
+        <div className="px-3 py-5 sm:px-4 lg:px-8">{children}</div>
       </main>
     </div>
   );

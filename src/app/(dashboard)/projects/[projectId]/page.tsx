@@ -55,11 +55,11 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
   const canRunReview = hasRequirementDocument && hasEvidenceDocument;
   const defaultReviewBrief = hasClientMinimumPackage
     ? [
-        "Compare Doc. 4, the proposed speaker, with Doc. 1 Specifications and provide clause/sub-clause compliance status for all technical and functional aspects.",
-        "List Doc. 1 items that are partly met or ambiguous and assign weightage from 1-10.",
-        "Identify applicable Doc. 2 technical, functional, and standards clauses for active speakers and compare them with Doc. 4.",
-        "Compare Doc. 4 speaker power supply technicality with relevant Doc. 3 sections.",
-        "Provide a clear final recommendation: technically accepted, accepted with conditions, or rejected. If Doc. 4 significantly exceeds the tender requirements, note whether a more cost-effective compliant model could be considered without sacrificing quality."
+        "1. Compare Doc. 4, the proposed speaker, with Doc. 1, the Specifications, and provide a detailed clause/sub-clause breakdown of all technical and functional aspects that are complied, partially complied, or not complied. For partially complied or not complied items, provide reasoning and contractor missing-information requirements before resubmission.",
+        "2. From Doc. 1 aspects that are partly met by Doc. 4 or ambiguous, provide a list and assign weightage from 1-10 where 1 is least complied and 10 is fully complied.",
+        "3. Identify from Doc. 2 the technical, functional, and standards clauses/sub-clauses applicable to this type of active speaker, compare Doc. 4 with those parameters, and state complied, partially complied, or not complied with contractor missing-information reasoning.",
+        "4. Compare Doc. 4 proposed speaker power supply technicality with relevant Doc. 3 sections and provide a detailed technical and functional breakdown of complied, partially complied, and not complied aspects.",
+        "5. Provide an unambiguous conclusion: Technically Accepted, Accepted with Conditions, or Rejected / Not Technically Accepted. If the speaker significantly exceeds specifications, include whether a more cost-effective compliant model could meet tender requirements without sacrificing quality."
       ].join("\n")
     : "";
   const matrixRows: ComplianceMatrixRow[] = findings.map((finding) => ({
@@ -119,8 +119,8 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
               Upload the specification, standards, proposed product, and supporting evidence before running any review.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-6 lg:grid-cols-[420px_minmax(0,1fr)]">
-            <DocumentUploadForm projectId={projectId} />
+          <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+            <DocumentUploadForm projectId={projectId} embedded />
             <div className="rounded-md border border-dashed bg-slate-50/70 p-5">
               <p className="font-medium">Recommended first upload sequence</p>
               <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
@@ -151,6 +151,42 @@ export default async function ProjectDetailPage({ params }: ProjectDetailPagePro
               </CardContent>
             </Card>
           ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Client minimum assessment scope</CardTitle>
+              <CardDescription>These five checks define the minimum accepted review output for this demo package.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 lg:grid-cols-2">
+              <ScopeItem
+                number="1"
+                title="Doc. 4 vs Doc. 1"
+                detail="Clause/sub-clause technical and functional compliance breakdown with contractor missing-information reasoning."
+              />
+              <ScopeItem
+                number="2"
+                title="Doc. 1 partial or ambiguous items"
+                detail="List every partly met or ambiguous aspect and assign weightage from 1-10."
+              />
+              <ScopeItem
+                number="3"
+                title="Doc. 2 applicability"
+                detail="Identify applicable active-speaker technical, functional, and standards clauses, then compare against Doc. 4."
+              />
+              <ScopeItem
+                number="4"
+                title="Doc. 3 power supply"
+                detail="Compare proposed speaker power supply technicality against relevant Doc. 3 technical and functional sections."
+              />
+              <div className="lg:col-span-2">
+                <ScopeItem
+                  number="5"
+                  title="Final conclusion"
+                  detail="State Technically Accepted, Accepted with Conditions, or Rejected / Not Technically Accepted, including cost-effective alternative note if over-specification is evident."
+                />
+              </div>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
@@ -398,10 +434,24 @@ function SummaryMetric({
   );
 }
 
+function ScopeItem({ number, title, detail }: { number: string; title: string; detail: string }) {
+  return (
+    <div className="flex gap-3 rounded-md border bg-slate-50/70 p-3">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground">
+        {number}
+      </div>
+      <div>
+        <p className="font-medium">{title}</p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">{detail}</p>
+      </div>
+    </div>
+  );
+}
+
 function DocumentRegister({ documents }: { documents: Awaited<ReturnType<typeof listProjectDocuments>> }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
+      <table className="min-w-[760px] w-full text-left text-sm">
         <thead className="border-b text-xs uppercase text-muted-foreground">
           <tr>
             <th className="py-3 pr-4">File</th>

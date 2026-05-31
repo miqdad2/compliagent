@@ -8,38 +8,4 @@
    - Environments: .env
 
  ✓ Starting...
- ✓ Ready in 2.8s
- ○ Compiling / ...
- ✓ Compiled / in 1307ms (531 modules)
- GET / 307 in 1746ms
- ○ Compiling /dashboard ...
- ✓ Compiled /dashboard in 1707ms (699 modules)
- GET /dashboard 200 in 3171ms
- ○ Compiling /api/documents/upload ...
- ✓ Compiled /api/documents/upload in 887ms (721 modules)
- POST /api/documents/upload 201 in 5174ms
- ○ Compiling /projects/[projectId] ...
- ✓ Compiled /projects/[projectId] in 1644ms (823 modules)
- GET /projects/84fafd0c-74ab-493c-9927-48ee9ea6b569 200 in 3920ms
- POST /api/documents/upload 201 in 3867ms
- GET /projects/84fafd0c-74ab-493c-9927-48ee9ea6b569 200 in 1126ms
- POST /api/documents/upload 201 in 6340ms
- GET /projects/84fafd0c-74ab-493c-9927-48ee9ea6b569 200 in 988ms
- ○ Compiling /api/documents/[documentId]/process ...
- ✓ Compiled /api/documents/[documentId]/process in 1882ms (1180 modules)
- POST /api/documents/6da216f3-3f38-44d0-9902-42c1246155c1/process 200 in 10176ms
- GET /projects/84fafd0c-74ab-493c-9927-48ee9ea6b569 200 in 981ms
- POST /api/documents/4fe098fd-b8b3-4a3b-849b-4ac90fd8ba93/process 200 in 11568ms
- GET /projects/84fafd0c-74ab-493c-9927-48ee9ea6b569 200 in 988ms
- POST /api/documents/70a1e2ad-97bf-4722-bfea-f4ba5509287e/process 200 in 7730ms
- GET /projects/84fafd0c-74ab-493c-9927-48ee9ea6b569 200 in 1352ms
- POST /api/documents/4dda4bfd-c4a3-4e41-9f20-29af07dc0e53/process 200 in 7808ms
- GET /projects/84fafd0c-74ab-493c-9927-48ee9ea6b569 200 in 827ms
- ○ Compiling /api/reviews ...
- ✓ Compiled /api/reviews in 1293ms (1179 modules)
- POST /api/reviews 200 in 11088ms
- GET /projects/84fafd0c-74ab-493c-9927-48ee9ea6b569 200 in 1811ms
- POST /api/reviews 200 in 5214ms
- GET /projects/84fafd0c-74ab-493c-9927-48ee9ea6b569 200 in 1723ms
- ✓ Compiled /api/chat/project in 488ms (435 modules)
- POST /api/chat/project 200 in 4293ms
+ ✓ Ready in 2.7s
