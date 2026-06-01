@@ -21,7 +21,7 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-normal">Dashboard</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Track projects, document processing, AI review status, and human review workload.
+            Track projects, document processing, evidence review status, and human review workload.
           </p>
         </div>
         <Link className={buttonVariants()} href="/projects/new">

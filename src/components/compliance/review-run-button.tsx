@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { BrainCircuit } from "lucide-react";
+import { ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -33,7 +33,7 @@ export function ReviewRunButton({ projectId, disabled = false, defaultReviewBrie
               });
               const payload = (await response.json().catch(() => ({}))) as {
                 error?: string;
-                data?: { findingCount?: number; recommendation?: string };
+                data?: { findingCount?: number; recommendation?: string; reviewEngine?: string; aiEnabled?: boolean };
               };
 
               if (!response.ok) {
@@ -42,7 +42,9 @@ export function ReviewRunButton({ projectId, disabled = false, defaultReviewBrie
               }
 
               setMessage(
-                `Generated ${payload.data?.findingCount ?? 0} finding${payload.data?.findingCount === 1 ? "" : "s"}.`
+                `Generated ${payload.data?.findingCount ?? 0} finding${payload.data?.findingCount === 1 ? "" : "s"} using ${
+                  payload.data?.reviewEngine ?? "the configured review engine"
+                }.`
               );
               router.refresh();
             } catch {
@@ -51,12 +53,12 @@ export function ReviewRunButton({ projectId, disabled = false, defaultReviewBrie
           });
         }}
       >
-        <BrainCircuit className="h-4 w-4" aria-hidden="true" />
-        {isPending ? "Running review" : "Run review"}
+        <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
+        {isPending ? "Running review" : "Run evidence review"}
       </Button>
       {message ? <p className="text-xs text-muted-foreground">{message}</p> : null}
       <details className="rounded-md border bg-slate-50 p-3">
-        <summary className="cursor-pointer text-sm font-medium">Advanced scope</summary>
+        <summary className="cursor-pointer text-sm font-medium">Review scope</summary>
         <Textarea
           className="mt-3"
           value={reviewBrief}

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAiRuntimeConfig } from "@/lib/ai/provider";
 import { generateTechnicalReview, type ReviewDocument } from "@/lib/compliance/review-runner";
 import { canRunReview } from "@/lib/permissions/roles";
 import { getCurrentProfile } from "@/lib/permissions/server";
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
   }
 
   if (!canRunReview(profile.role)) {
-    return NextResponse.json({ error: "You do not have permission to run AI reviews." }, { status: 403 });
+    return NextResponse.json({ error: "You do not have permission to run reviews." }, { status: 403 });
   }
 
   const payload = (await request.json().catch(() => ({}))) as ReviewRequest;
@@ -108,6 +109,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Process at least one requirement document and one evidence document before running a review." }, { status: 400 });
   }
 
+  const aiRuntime = getAiRuntimeConfig();
+
   const { data: review, error: reviewError } = await supabase
     .from("compliance_reviews")
     .insert({
@@ -115,7 +118,7 @@ export async function POST(request: Request) {
       title: `${project.name} technical compliance review`,
       review_scope: `${project.discipline} - ${project.review_type}`,
       status: "running",
-      ai_model: process.env.AI_PROVIDER ? `provider:${process.env.AI_PROVIDER}` : "deterministic-phase-1",
+      ai_model: aiRuntime.reviewEngineId,
       created_by: profile.id
     })
     .select("id")
@@ -211,13 +214,15 @@ export async function POST(request: Request) {
       .update({
         status: "completed",
         progress: 100,
-        metadata: {
-          documentCount: documents.length,
-          findingCount: generated.findings.length,
-          clarificationCount: generated.clarifications.length,
-          recommendation: generated.recommendation,
-          reviewBrief
-        }
+      metadata: {
+        documentCount: documents.length,
+        findingCount: generated.findings.length,
+        clarificationCount: generated.clarifications.length,
+        recommendation: generated.recommendation,
+        reviewEngine: aiRuntime.reviewEngineId,
+        aiEnabled: aiRuntime.aiEnabled,
+        reviewBrief
+      }
       })
       .eq("id", job?.id);
     await supabase.from("audit_logs").insert({
@@ -230,7 +235,9 @@ export async function POST(request: Request) {
       metadata: {
         findingCount: generated.findings.length,
         clarificationCount: generated.clarifications.length,
-        recommendation: generated.recommendation
+        recommendation: generated.recommendation,
+        reviewEngine: aiRuntime.reviewEngineId,
+        aiEnabled: aiRuntime.aiEnabled
       }
     });
 
@@ -239,7 +246,9 @@ export async function POST(request: Request) {
         reviewId: review.id,
         findingCount: generated.findings.length,
         clarificationCount: generated.clarifications.length,
-        recommendation: generated.recommendation
+        recommendation: generated.recommendation,
+        reviewEngine: aiRuntime.reviewEngineLabel,
+        aiEnabled: aiRuntime.aiEnabled
       }
     });
   } catch (error) {
