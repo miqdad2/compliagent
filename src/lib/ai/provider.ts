@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-export const aiProviderSchema = z.enum(["openai", "anthropic", "gemini", "mistral", "openrouter"]);
+export const aiProviders = ["openai", "anthropic", "gemini", "mistral", "openrouter"] as const;
+export const aiProviderSchema = z.enum(aiProviders);
 export type AiProvider = z.infer<typeof aiProviderSchema>;
 
 export type AiJsonRequest = {
@@ -8,6 +9,9 @@ export type AiJsonRequest = {
   userPrompt: string;
   schemaName: string;
 };
+
+// Retained for the current deterministic review route. New provider adapters must
+// implement AiProviderClient from provider-interface.ts instead of extending this legacy shape.
 
 export type AiJsonClient = {
   provider: AiProvider;

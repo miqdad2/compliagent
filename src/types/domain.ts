@@ -16,29 +16,60 @@ export const projectStatuses = [
 export type ProjectStatus = (typeof projectStatuses)[number];
 
 export const documentRoles = [
+  // Legacy values — retained for backward compatibility.
   "main_specification",
-  "reference_standard",
   "proposed_product",
+  "manual",
+  "compliance_statement",
+  // Current controlled-review roles.
+  "specification",
+  "reference_standard",
+  "contractor_submission",
   "product_datasheet",
   "certificate",
   "drawing",
-  "manual",
-  "compliance_statement",
+  "calculation",
+  "method_statement",
+  "test_report",
   "supporting_evidence",
+  "correspondence",
   "other"
 ] as const;
 export type DocumentRole = (typeof documentRoles)[number];
 
-export const processingStatuses = ["queued", "running", "completed", "failed", "cancelled"] as const;
+/** Roles that indicate a document is a source of requirements. */
+export const specificationRoles: DocumentRole[] = ["specification", "main_specification", "reference_standard"];
+
+/** Roles that indicate a document is contractor-submitted evidence. */
+export const submissionRoles: DocumentRole[] = [
+  "contractor_submission",
+  "proposed_product",
+  "product_datasheet",
+  "certificate",
+  "drawing",
+  "calculation",
+  "method_statement",
+  "test_report",
+  "supporting_evidence",
+  "correspondence",
+  "manual",
+  "compliance_statement"
+];
+
+export const processingStatuses = ["queued", "claimed", "running", "completed", "failed", "cancelled", "retry_wait"] as const;
 export type ProcessingStatus = (typeof processingStatuses)[number];
 
 export const complianceStatuses = [
   "complied",
   "partially_complied",
   "not_complied",
-  "ambiguous_not_proven",
+  "ambiguous",
+  "not_proven",
+  "exceeds_requirement",
   "not_applicable",
-  "not_verified"
+  "not_verified",
+  // Retained for rows created before ambiguous and not_proven became separate states.
+  "ambiguous_not_proven"
 ] as const;
 export type ComplianceStatus = (typeof complianceStatuses)[number];
 

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { enqueueDocumentProcessing, runDocumentProcessingFromBuffer } from "@/lib/documents/processing-pipeline";
 import { canUploadDocument } from "@/lib/permissions/roles";
 import { getCurrentProfile } from "@/lib/permissions/server";
 import { supabaseMissingEnvMessage } from "@/lib/supabase/config";
@@ -34,8 +33,14 @@ export async function POST(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "You do not have permission to process documents." }, { status: 403 });
   }
 
-  const { data: document, error } = await supabase.from("documents").select("*").eq("id", documentId).maybeSingle();
-  if (error || !document) {
+  // Verify document access.
+  const { data: document, error: documentError } = await supabase
+    .from("documents")
+    .select("id, project_id, organization_id, storage_path, mime_type")
+    .eq("id", documentId)
+    .maybeSingle();
+
+  if (documentError || !document) {
     return NextResponse.json({ error: "Document was not found or is not accessible." }, { status: 404 });
   }
 
@@ -43,22 +48,49 @@ export async function POST(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "You do not have access to this document." }, { status: 403 });
   }
 
-  const queuedJob = await enqueueDocumentProcessing({
-    documentId,
-    projectId: document.project_id,
-    storagePath: document.storage_path,
-    mimeType: document.mime_type
-  });
+  // Prevent duplicate active jobs.
+  const { data: activeJob } = await supabase
+    .from("processing_jobs")
+    .select("id, status, updated_at")
+    .eq("document_id", documentId)
+    .eq("job_type", "document_extraction")
+    .in("status", ["queued", "claimed", "running", "retry_wait"])
+    .limit(1)
+    .maybeSingle();
 
+  if (activeJob) {
+    const ageMs = Date.now() - new Date(activeJob.updated_at).getTime();
+    const staleThresholdMs = 15 * 60 * 1000;
+    if (ageMs < staleThresholdMs) {
+      return NextResponse.json(
+        { error: "This document already has an extraction job in progress.", code: "job_in_progress", retryable: true },
+        { status: 409 }
+      );
+    }
+    // Abandon the stale job so a new one can be created.
+    await supabase
+      .from("processing_jobs")
+      .update({
+        status: "failed",
+        safe_error_message: "Job abandoned: no heartbeat before a new processing request was received.",
+        last_error_code: "stale_job"
+      })
+      .eq("id", activeJob.id);
+  }
+
+  // Enqueue a new processing job.
   const { data: job, error: jobError } = await supabase
     .from("processing_jobs")
     .insert({
       organization_id: profile.organization_id,
       project_id: document.project_id,
       document_id: documentId,
-      job_type: queuedJob.jobType,
-      status: "running",
-      progress: 10,
+      job_type: "document_extraction",
+      status: "queued",
+      progress: 0,
+      priority: 5,
+      available_at: new Date().toISOString(),
+      created_by: profile.id,
       metadata: { storagePath: document.storage_path, mimeType: document.mime_type }
     })
     .select("id")
@@ -68,137 +100,28 @@ export async function POST(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: jobError?.message ?? "Could not create document processing job." }, { status: 400 });
   }
 
-  await supabase.from("documents").update({ processing_status: "running" }).eq("id", documentId);
-  await supabase.from("projects").update({ status: "processing" }).eq("id", document.project_id);
+  // Update document and project to reflect queued state.
+  await Promise.all([
+    supabase.from("documents").update({ processing_status: "queued" }).eq("id", documentId),
+    supabase.from("projects").update({ status: "processing" }).eq("id", document.project_id)
+  ]);
 
-  const bucketName = process.env.SUPABASE_STORAGE_BUCKET_DOCUMENTS || "documents";
-  const { data: fileBlob, error: downloadError } = await supabase.storage.from(bucketName).download(document.storage_path);
+  await supabase.from("audit_logs").insert({
+    organization_id: profile.organization_id,
+    project_id: document.project_id,
+    user_id: profile.id,
+    action: "document.processing_queued",
+    entity_type: "processing_jobs",
+    entity_id: job.id,
+    metadata: { documentId }
+  });
 
-  if (downloadError || !fileBlob) {
-    const message = downloadError?.message ?? "Document could not be downloaded from private storage.";
-    await supabase.from("documents").update({ processing_status: "failed" }).eq("id", documentId);
-    await supabase.from("projects").update({ status: "documents_uploaded" }).eq("id", document.project_id);
-    await supabase.from("processing_jobs").update({ status: "failed", progress: 100, error_message: message }).eq("id", job.id);
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
-
-  try {
-    const buffer = Buffer.from(await fileBlob.arrayBuffer());
-    const result = await runDocumentProcessingFromBuffer(
-      {
-        documentId,
-        projectId: document.project_id,
-        storagePath: document.storage_path,
-        mimeType: document.mime_type
-      },
-      buffer
-    );
-
-    await supabase.from("document_chunks").delete().eq("document_id", documentId);
-    await supabase.from("document_pages").delete().eq("document_id", documentId);
-
-    if (result.pages.length > 0) {
-      const pageRows = result.pages.map((page) => ({
-        document_id: documentId,
-        project_id: document.project_id,
-        page_number: page.pageNumber,
-        extracted_text: page.text,
-        extraction_method: result.chunks.find((chunk) => chunk.pageNumber === page.pageNumber)?.extractionMethod ?? "manual",
-        confidence: result.chunks.find((chunk) => chunk.pageNumber === page.pageNumber)?.confidence ?? 0.9
-      }));
-      const { error: pagesError } = await supabase.from("document_pages").insert(pageRows);
-
-      if (pagesError) {
-        throw new Error(pagesError.message);
-      }
+  return NextResponse.json({
+    data: {
+      jobId: job.id,
+      status: "queued",
+      documentId,
+      message: "Document queued for processing. Run the processing worker to execute."
     }
-
-    if (result.chunks.length > 0) {
-      const { error: chunksError } = await supabase.from("document_chunks").insert(
-        result.chunks.map((chunk) => ({
-          document_id: documentId,
-          project_id: document.project_id,
-          page_number: chunk.pageNumber,
-          clause_number: chunk.clauseNumber,
-          section_heading: chunk.sectionHeading,
-          chunk_text: chunk.rawText,
-          normalized_text: chunk.normalizedText,
-          metadata: {
-            chunkIndex: chunk.chunkIndex,
-            tokenCount: chunk.tokenCount,
-            extractionMethod: chunk.extractionMethod,
-            confidence: chunk.confidence
-          }
-        }))
-      );
-
-      if (chunksError) {
-        throw new Error(chunksError.message);
-      }
-    }
-
-    await supabase
-      .from("documents")
-      .update({
-        processing_status: result.status,
-        page_count: result.pageCount,
-        ocr_required: result.ocrRequired
-      })
-      .eq("id", documentId);
-    await supabase
-      .from("processing_jobs")
-      .update({
-        status: result.status,
-        progress: 100,
-        error_message: result.status === "failed" ? result.message : null,
-        metadata: {
-          storagePath: document.storage_path,
-          mimeType: document.mime_type,
-          pageCount: result.pageCount,
-          chunkCount: result.chunks.length,
-          warnings: result.warnings
-        }
-      })
-      .eq("id", job.id);
-
-    if (result.status === "completed") {
-      const { data: projectDocuments } = await supabase
-        .from("documents")
-        .select("processing_status")
-        .eq("project_id", document.project_id);
-      const allDocumentsCompleted =
-        projectDocuments && projectDocuments.length > 0
-          ? projectDocuments.every((projectDocument) => projectDocument.processing_status === "completed")
-          : false;
-
-      await supabase
-        .from("projects")
-        .update({ status: allDocumentsCompleted ? "ready_for_review" : "documents_uploaded" })
-        .eq("id", document.project_id);
-    } else {
-      await supabase.from("projects").update({ status: "documents_uploaded" }).eq("id", document.project_id);
-    }
-
-    const status = result.status === "completed" ? 200 : 422;
-    return NextResponse.json(
-      {
-        data: {
-          ...queuedJob,
-          status: result.status,
-          pageCount: result.pageCount,
-          chunkCount: result.chunks.length,
-          ocrRequired: result.ocrRequired,
-          message: result.message,
-          warnings: result.warnings
-        }
-      },
-      { status }
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Document processing failed.";
-    await supabase.from("documents").update({ processing_status: "failed" }).eq("id", documentId);
-    await supabase.from("projects").update({ status: "documents_uploaded" }).eq("id", document.project_id);
-    await supabase.from("processing_jobs").update({ status: "failed", progress: 100, error_message: message }).eq("id", job.id);
-    return NextResponse.json({ error: message }, { status: 422 });
-  }
+  });
 }

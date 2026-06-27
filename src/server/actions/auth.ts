@@ -9,6 +9,7 @@ import {
   validateStaticCredentials
 } from "@/lib/auth/static-auth";
 import { ensureUserProfile, getCurrentProfile } from "@/lib/permissions/server";
+import { defaultLandingPath } from "@/lib/permissions/roles";
 import { supabaseMissingEnvMessage } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -27,9 +28,9 @@ function redirectWithAuthError(message: string): never {
   redirect(`/login?error=${encodeURIComponent(message)}`);
 }
 
-function safeNextPath(value: FormDataEntryValue | null) {
-  const path = typeof value === "string" && value.startsWith("/") ? value : "/dashboard";
-  return path.startsWith("//") ? "/dashboard" : path;
+function safeNextPath(value: FormDataEntryValue | null, fallback = "/projects"): string {
+  const path = typeof value === "string" && value.startsWith("/") ? value : fallback;
+  return path.startsWith("//") ? fallback : path;
 }
 
 export async function signInAction(formData: FormData) {
@@ -52,9 +53,21 @@ export async function signInAction(formData: FormData) {
   }
 
   await setStaticAuthSessionCookie();
-  await getCurrentProfile();
+  const profile = await getCurrentProfile();
 
-  redirect(safeNextPath(formData.get("next")));
+  // Role-based landing: admins go to /overview, everyone else to /projects.
+  // If a specific non-default 'next' was passed in the form, honour it.
+  const requestedNext = formData.get("next");
+  const roleFallback  = profile ? defaultLandingPath(profile.role) : "/projects";
+  const isDefaultNext = !requestedNext ||
+    requestedNext === "/dashboard" ||
+    requestedNext === "/projects" ||
+    requestedNext === "/overview";
+  const destination   = isDefaultNext
+    ? roleFallback
+    : safeNextPath(requestedNext, roleFallback);
+
+  redirect(destination);
 }
 
 export async function signUpAction() {

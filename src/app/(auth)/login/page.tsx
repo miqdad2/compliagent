@@ -18,7 +18,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const setupError = staticAuthMissingEnvMessage() ?? supabaseMissingEnvMessage({ requireServiceRole: true });
   const authError = params.error ? decodeURIComponent(params.error) : null;
-  const nextPath = params.next ?? "/dashboard";
+  const nextPath = params.next ?? "/projects";
   const configuredUsername = getStaticLoginUsername();
 
   return (

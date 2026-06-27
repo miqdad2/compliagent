@@ -8,7 +8,9 @@
     "build": "next build",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "worker:documents": "tsx --env-file .env src/server/workers/run-document-worker.ts",
+    "worker:documents:watch": "tsx --env-file .env src/server/workers/watch-document-worker.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",
@@ -18,6 +20,7 @@
     "lucide-react": "^0.468.0",
     "mammoth": "^1.12.0",
     "next": "15.5.9",
+    "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "react": "19.0.0",
     "react-dom": "19.0.0",
@@ -27,6 +30,7 @@
   },
   "devDependencies": {
     "@testing-library/react": "^16.2.0",
+    "tsx": "^4.19.3",
     "@types/node": "^22.10.2",
     "@types/react": "19.0.2",
     "@types/react-dom": "19.0.2",

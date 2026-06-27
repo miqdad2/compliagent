@@ -4,6 +4,9 @@ const placeholderStatuses = [
   "complied",
   "partially_complied",
   "not_complied",
+  "ambiguous",
+  "not_proven",
+  "exceeds_requirement",
   "ambiguous_not_proven",
   "not_applicable"
 ] as const;

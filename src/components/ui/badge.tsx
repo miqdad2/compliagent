@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-type BadgeTone = "default" | "green" | "amber" | "red" | "purple" | "gray";
+type BadgeTone = "default" | "green" | "amber" | "red" | "purple" | "blue" | "gray";
 
 const toneClasses: Record<BadgeTone, string> = {
   default: "bg-primary/10 text-primary",
@@ -8,6 +8,7 @@ const toneClasses: Record<BadgeTone, string> = {
   amber: "bg-amber-50 text-amber-800",
   red: "bg-red-50 text-red-700",
   purple: "bg-purple-50 text-purple-700",
+  blue: "bg-sky-50 text-sky-700",
   gray: "bg-slate-100 text-slate-700"
 };
 

@@ -227,7 +227,7 @@ export function generateTechnicalReview(documents: ReviewDocument[], options: Re
     return buildFinding(requirement, scopedEvidenceDocuments);
   });
   const clarifications = findings
-    .filter((finding) => finding.status !== "complied" && finding.status !== "not_applicable")
+    .filter((finding) => !["complied", "exceeds_requirement", "not_applicable"].includes(finding.status))
     .map(createClarification);
   const recommendation = summarizeRecommendation(findings);
 
@@ -259,11 +259,13 @@ export function summarizeRecommendation(findings: Pick<GeneratedFinding, "status
   const criticalOpen = findings.some(
     (finding) =>
       finding.riskLevel === "critical" &&
-      ["not_complied", "ambiguous_not_proven", "not_verified", "partially_complied"].includes(finding.status)
+      ["not_complied", "ambiguous", "not_proven", "ambiguous_not_proven", "not_verified", "partially_complied"].includes(
+        finding.status
+      )
   );
   const notComplied = findings.some((finding) => finding.status === "not_complied");
   const unresolved = findings.some((finding) =>
-    ["partially_complied", "ambiguous_not_proven", "not_verified"].includes(finding.status)
+    ["partially_complied", "ambiguous", "not_proven", "ambiguous_not_proven", "not_verified"].includes(finding.status)
   );
 
   if (notComplied || criticalOpen) {

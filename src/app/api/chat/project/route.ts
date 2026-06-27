@@ -251,7 +251,7 @@ function buildSummaryAnswer(
   const counts = countStatuses(findings);
   const recommendation = reviewScope?.match(/Recommendation:\s*([^\n]+)/)?.[1] ?? inferRecommendation(findings);
   const topOpen = findings
-    .filter((finding) => finding.status !== "complied" && finding.status !== "not_applicable")
+    .filter((finding) => !["complied", "exceeds_requirement", "not_applicable"].includes(finding.status))
     .sort(compareFindingPriority)
     .slice(0, 4);
   const sources = uniqueSources(topOpen.flatMap(sourcesForFinding));
@@ -259,7 +259,7 @@ function buildSummaryAnswer(
   return {
     answer: [
       `Answer: ${recommendation}.`,
-      `Why: ${counts.not_complied} not complied, ${counts.partially_complied} partially complied, ${counts.ambiguous_not_proven + counts.not_verified} ambiguous/not verified, and ${clarifications.length} contractor clarification item(s) remain open.`,
+      `Why: ${counts.not_complied} not complied, ${counts.partially_complied} partially complied, ${counts.ambiguous + counts.not_proven + counts.ambiguous_not_proven + counts.not_verified} ambiguous/not proven/not verified, and ${clarifications.length} contractor clarification item(s) remain open.`,
       topOpen.length > 0
         ? [
             "Highest-priority open items:",
@@ -334,7 +334,9 @@ function buildStatusAnswer(question: string, findings: FindingRow[], terms: stri
   } else if (normalized.includes("partial")) {
     selected = findings.filter((finding) => finding.status === "partially_complied");
   } else if (normalized.includes("ambiguous") || normalized.includes("not proven") || normalized.includes("not verified")) {
-    selected = findings.filter((finding) => ["ambiguous_not_proven", "not_verified"].includes(finding.status));
+    selected = findings.filter((finding) =>
+      ["ambiguous", "not_proven", "ambiguous_not_proven", "not_verified"].includes(finding.status)
+    );
   } else if (normalized.includes("human review")) {
     selected = findings.filter((finding) => finding.confidence_score < 70 || finding.status !== "complied");
   } else if (normalized.includes("critical") || normalized.includes("highest risk") || normalized.includes("risk")) {
@@ -481,6 +483,9 @@ function countStatuses(findings: FindingRow[]) {
       complied: 0,
       partially_complied: 0,
       not_complied: 0,
+      ambiguous: 0,
+      not_proven: 0,
+      exceeds_requirement: 0,
       ambiguous_not_proven: 0,
       not_applicable: 0,
       not_verified: 0
@@ -492,11 +497,13 @@ function inferRecommendation(findings: FindingRow[]) {
   const hasCriticalOpen = findings.some(
     (finding) =>
       finding.risk_level === "critical" &&
-      ["not_complied", "ambiguous_not_proven", "not_verified", "partially_complied"].includes(finding.status)
+      ["not_complied", "ambiguous", "not_proven", "ambiguous_not_proven", "not_verified", "partially_complied"].includes(
+        finding.status
+      )
   );
   const hasNotComplied = findings.some((finding) => finding.status === "not_complied");
   const hasOpen = findings.some((finding) =>
-    ["partially_complied", "ambiguous_not_proven", "not_verified"].includes(finding.status)
+    ["partially_complied", "ambiguous", "not_proven", "ambiguous_not_proven", "not_verified"].includes(finding.status)
   );
 
   if (hasCriticalOpen || hasNotComplied) {
@@ -533,14 +540,19 @@ function statusRank(status: ComplianceStatus) {
       return 0;
     case "not_verified":
       return 1;
-    case "ambiguous_not_proven":
+    case "not_proven":
       return 2;
-    case "partially_complied":
+    case "ambiguous":
+    case "ambiguous_not_proven":
       return 3;
-    case "not_applicable":
+    case "partially_complied":
       return 4;
-    case "complied":
+    case "not_applicable":
       return 5;
+    case "exceeds_requirement":
+      return 6;
+    case "complied":
+      return 7;
   }
 }
 
