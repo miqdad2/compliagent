@@ -1069,7 +1069,124 @@ Queue was empty — no jobs to process.
   - `20260628000001_controlled_review_pipeline_schema.sql`
   - `20260629000000_provisional_requirement_persistence.sql`
   - `20260630000000_annotation_outputs.sql`
+  - `20260703000000_worker_liveness.sql` (new — worker health marker table)
 - Live AI provider activation pending (ANTHROPIC_API_KEY empty)
+
+---
+
+### Unit 17L — Prepare CompliAgent for Vercel Web + Railway Worker Deployment (completed)
+
+**Problem solved**: Both worker scripts used `tsx --env-file .env` which requires a physical `.env` file. Railway injects env vars directly into `process.env`, so the flag would break in production. The progress page also showed infrastructure commands (terminal commands) to all users regardless of environment.
+
+**Files created:**
+
+- `src/server/workers/load-env.ts` — optional local env loader:
+  - Reads `.env` from project root (or a custom path) when the file is present; no-op when absent
+  - Never overwrites existing `process.env` values (Railway-injected vars take precedence)
+  - Does not evaluate shell syntax — treats `$(...)` and backtick expressions as literal strings
+  - Silently ignores missing or unreadable files
+
+- `src/server/workers/worker-env.ts` — Zod validation at the env boundary:
+  - Validates `NEXT_PUBLIC_SUPABASE_URL` (required), `SUPABASE_SERVICE_ROLE_KEY` (required), `SUPABASE_STORAGE_BUCKET_DOCUMENTS` (default: "documents"), and optional numeric vars
+  - Throws with a safe message listing only field names — never logs values
+  - Used at startup of both worker entry points
+
+- `supabase/migrations/20260703000000_worker_liveness.sql` — worker heartbeat table:
+  - `worker_liveness` table with `worker_type` (PK), `worker_id`, `last_heartbeat_at`, `started_at`
+  - RLS enabled; authenticated users can read (for progress-page messaging)
+  - Service-role client (worker) bypasses RLS and can upsert directly
+  - Must be applied manually before the liveness heartbeat can be stored
+
+- `src/server/workers/check-deployment-readiness.ts` — `pnpm deploy:check` script:
+  - Loads `.env` optionally, validates env vars via Zod, creates admin client
+  - Checks: DB connectivity, 8 required tables, 4 required RPCs, documents storage bucket (must be private)
+  - Prints `✓`/`✗` per check; exits 0 on full pass, 1 on any failure
+  - Never prints secret values — only field names and safe status strings
+
+- `context/deployment-railway-worker.md` — Railway deployment guide:
+  - Service setup, start command, required env vars, healthy startup logs, liveness monitoring, crash/restart behavior, troubleshooting, migration list, final setup checklist
+
+- `context/deployment-vercel.md` — Vercel deployment guide:
+  - Project setup, build settings, required env vars, Supabase checklist (migrations, RPCs, buckets, RLS, Auth), deployment checklist
+
+- `src/tests/deployment-17l.test.ts` — 35 regression tests (10 describe blocks):
+  - `loadLocalEnv` (4 tests): sets missing vars, does not overwrite existing, silent when absent, literal shell syntax
+  - `validateWorkerEnv` (5 tests): valid env passes, missing URL throws, missing key throws, error has no secret values, bucket defaults to "documents"
+  - `packageManager` (2 tests): field present, matches `pnpm@X.Y.Z` pattern
+  - Railway separation (4 tests): no `--env-file` in either script, both workers call `loadLocalEnv`
+  - Startup diagnostics (2 tests): logs batch size, doesn't log URL value
+  - Worker liveness migration (2 tests): file exists, contains `last_heartbeat_at`
+  - Processing-status route (2 tests): queries `worker_liveness`, returns `workerLiveness` field
+  - Vercel separation (1 test): no `runWatchWorkerLoop` in route handlers
+  - Production messaging (4 tests): `NODE_ENV` guard before pnpm command, active/unavailable messages present, `workerLiveness` tracked in client
+  - deploy:check (2 tests): script in package.json, source file exists
+  - Deployment docs (4 tests): both markdown files exist with expected content
+  - Secret-safety (3 tests): worker-env.ts never logs, load-env.ts no eval/exec, check script never prints key value
+
+**Files modified:**
+
+- `package.json`:
+  - Added `"packageManager": "pnpm@10.33.4"` field
+  - `worker:documents` script: removed `--env-file .env` → `tsx src/server/workers/run-document-worker.ts`
+  - `worker:documents:watch` script: removed `--env-file .env` → `tsx src/server/workers/watch-document-worker.ts`
+  - Added `"deploy:check": "tsx src/server/workers/check-deployment-readiness.ts"` script
+
+- `src/server/workers/run-document-worker.ts`:
+  - Added import of `loadLocalEnv` and `validateWorkerEnv`
+  - CLI entry block now calls `loadLocalEnv()` before env checks
+  - Replaced manual env var checks with `validateWorkerEnv()` (Zod)
+  - Updated doc comment: removed `--env-file .env` from example invocation
+
+- `src/server/workers/watch-document-worker.ts` (major update):
+  - Added `loadLocalEnv` and `validateWorkerEnv` imports
+  - Added `WORKER_HEARTBEAT_INTERVAL_MS = 30_000` and `WORKER_TYPE = "document_processing"` exports
+  - CLI entry block: `loadLocalEnv()` + `validateWorkerEnv()` before any env reads
+  - Safe startup diagnostics: logs batch size / intervals / "Supabase configuration: present" / bucket name — never URL or key values
+  - Worker liveness heartbeat: `admin.from("worker_liveness").upsert(...)` every 30s via `setInterval`
+  - Initial heartbeat sent immediately on startup; timer cleared on clean exit or fatal error
+  - Removed duplicate `createSupabaseAdminClient()` call — single client shared for batch running and heartbeat
+
+- `src/app/api/projects/[projectId]/processing-status/route.ts`:
+  - Added `WORKER_ACTIVE_THRESHOLD_MS` (2 min) and `WORKER_STALE_THRESHOLD_MS` (10 min) constants
+  - Parallel queries now include `worker_liveness` table (`.eq("worker_type", "document_processing").maybeSingle()`)
+  - Computes `workerLiveness: "active" | "stale" | "unknown"` from heartbeat age
+  - Returns `workerLiveness` in response alongside existing fields
+
+- `src/components/projects/project-progress-client.tsx`:
+  - Added `WorkerLiveness = "active" | "stale" | "unknown"` type
+  - Added `IS_PRODUCTION = process.env.NODE_ENV === "production"` constant (inlined at build time)
+  - Extended `ProcessingStatusResponse` type with optional `workerLiveness` field
+  - Added `workerLiveness` state (`useState<WorkerLiveness>("unknown")`)
+  - `pollDocuments()` reads `workerLiveness` from response and calls `setWorkerLiveness`
+  - `handleRetry()` resets `workerLiveness` to "unknown"
+  - `docPhaseHeading()` / `docPhaseDetail()`: in `IS_PRODUCTION` mode, returns liveness-based user-friendly messages; in dev mode, returns informative messages with worker state details
+  - Worker hint box (queued state): dev shows `pnpm worker:documents:watch`; production shows "Documents are queued for processing and will begin shortly."
+  - Stalled warning: dev shows "Processing stalled" + restart command; production shows "Service temporarily unavailable" + "The document-processing service is temporarily unavailable. Please try again shortly or contact support."
+
+**Architecture invariants preserved:**
+- No worker runs inside the Next.js web process
+- No live AI enabled
+- No compliance-report export
+- No secrets exposed in logs, API responses, or UI
+- Original uploaded documents not overwritten
+- All RLS and server-side auth checks intact
+
+**Constraints honored:**
+- "Do not move the web application away from Vercel" — Vercel config unchanged
+- "Do not enable live AI" — no AI code paths added
+- "Do not expose or print secret values" — all startup logs reference field names and presence flags only
+- "The worker must be able to start in Railway without a checked-in `.env` file" — `--env-file .env` removed; `loadLocalEnv()` is silent when `.env` absent
+- "Do not overwrite already-defined environment variables" — `loadLocalEnv` skips keys already in `process.env`
+- "Do not add shell-specific syntax" — scripts use plain `tsx` invocation, no shell syntax
+- "Normal clients must never see infrastructure commands" — terminal commands guarded by `IS_PRODUCTION`
+
+**Verification:**
+- `pnpm lint` — warnings only (all pre-existing)
+- `pnpm typecheck` — clean
+- `pnpm test` — 911/911 (33 test files; 35 new tests from 17L)
+- `pnpm build` — succeeded
+
+**Next implementation unit:** Railway + Vercel deployment — apply `20260703000000_worker_liveness.sql` migration in Supabase, deploy to Railway with start command `pnpm worker:documents:watch`, verify the full one-click flow end-to-end in the live environment.
 
 ### Unit 17B — Document Processing Pipeline Bugs Fixed (in progress)
 

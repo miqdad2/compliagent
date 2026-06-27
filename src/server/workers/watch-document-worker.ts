@@ -2,9 +2,16 @@
  * Continuous document processing worker.
  *
  * Run with: pnpm worker:documents:watch
- *          (tsx --env-file .env src/server/workers/watch-document-worker.ts)
+ *          (tsx src/server/workers/watch-document-worker.ts)
+ *
+ * In production (Railway), env vars are injected via process.env — no .env file
+ * is required. For local development a .env file is loaded automatically when
+ * it exists.
  *
  * Environment variables:
+ *   NEXT_PUBLIC_SUPABASE_URL        (required)
+ *   SUPABASE_SERVICE_ROLE_KEY       (required)
+ *   SUPABASE_STORAGE_BUCKET_DOCUMENTS (optional, default: "documents")
  *   WORKER_DOCUMENT_BATCH_SIZE        Max docs per poll cycle (default: 10, max: 100)
  *   WORKER_DOCUMENT_POLL_INTERVAL_MS  Delay after a productive cycle (default: 3000)
  *   WORKER_DOCUMENT_IDLE_BACKOFF_MS   Delay when queue is empty (default: 5000)
@@ -13,9 +20,14 @@
  * the current batch completes. Does not use HTTP routes, Next.js APIs, browser
  * auth, or cookies. The underlying DocumentProcessingWorker handles all
  * claim / heartbeat / retry / abandoned-job recovery logic.
+ *
+ * The worker periodically writes a heartbeat to the worker_liveness table so
+ * the web application can distinguish active / stale / unknown worker state.
  */
 
 import { hostname } from "node:os";
+import { loadLocalEnv } from "./load-env";
+import { validateWorkerEnv } from "./worker-env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { SupabaseProcessingGateway } from "@/server/services/processing/supabase-processing-gateway";
 import {
@@ -30,6 +42,9 @@ export const DEFAULT_WATCH_BATCH_SIZE  = 10;
 export const MAX_WATCH_BATCH_SIZE      = 100;
 export const DEFAULT_POLL_INTERVAL_MS  = 3_000;
 export const DEFAULT_IDLE_BACKOFF_MS   = 5_000;
+
+export const WORKER_HEARTBEAT_INTERVAL_MS = 30_000;
+export const WORKER_TYPE = "document_processing";
 
 export type WatchWorkerConfig = {
   batchSize:      number;
@@ -188,20 +203,30 @@ const isDirectExecution =
   entryFile.endsWith("watch-document-worker.js");
 
 if (isDirectExecution) {
-  const supabaseUrl    = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Load .env if present locally; no-op in Railway where vars are pre-injected.
+  loadLocalEnv();
 
-  if (!supabaseUrl) {
-    console.error("Error: NEXT_PUBLIC_SUPABASE_URL is not set. Check your .env file.");
-    process.exit(2);
-  }
-  if (!serviceRoleKey) {
-    console.error("Error: SUPABASE_SERVICE_ROLE_KEY is not set. Check your .env file.");
+  // Validate required env vars via Zod — fails fast with safe field-name message.
+  let workerEnv: ReturnType<typeof validateWorkerEnv>;
+  try {
+    workerEnv = validateWorkerEnv();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : "Worker configuration error.");
     process.exit(2);
   }
 
   const config     = parseWatchWorkerConfig();
   const stopSignal = createStopSignal();
+  const workerId   = buildWatchWorkerId();
+
+  // Startup diagnostics — safe values only; never logs URL or key values.
+  console.log("Document watch worker starting (Ctrl+C to stop)…");
+  console.log(`  Batch size:          ${config.batchSize}`);
+  console.log(`  Poll interval:       ${config.pollIntervalMs}ms`);
+  console.log(`  Idle backoff:        ${config.idleBackoffMs}ms`);
+  console.log(`  Supabase configuration: ${workerEnv.NEXT_PUBLIC_SUPABASE_URL ? "present" : "missing"}`);
+  console.log(`  Documents bucket:    ${workerEnv.SUPABASE_STORAGE_BUCKET_DOCUMENTS} (configured)`);
+  console.log(`  Worker ID:           ${workerId}`);
 
   process.on("SIGINT", () => {
     console.log("\nReceived SIGINT — stopping after current batch…");
@@ -213,16 +238,18 @@ if (isDirectExecution) {
     stopSignal.stop();
   });
 
-  console.log("Document watch worker starting (Ctrl+C to stop)…");
-  console.log(
-    `Config: batchSize=${config.batchSize} ` +
-    `pollIntervalMs=${config.pollIntervalMs} ` +
-    `idleBackoffMs=${config.idleBackoffMs}`
-  );
+  // Create admin client for both batch running and heartbeat.
+  const admin = createSupabaseAdminClient();
+  if (!admin) {
+    console.error("Failed to initialize Supabase admin client.");
+    process.exit(3);
+  }
+
+  const gateway = new SupabaseProcessingGateway(admin);
 
   function initRunner(): (n: number) => Promise<WorkerBatchResult> {
     try {
-      return buildBatchRunner();
+      return buildBatchRunner({ gateway, workerId });
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message.slice(0, 200) : "Unexpected error during init.";
@@ -233,12 +260,35 @@ if (isDirectExecution) {
 
   const runBatch = initRunner();
 
+  // Heartbeat: upsert a row in worker_liveness every 30 seconds so the web
+  // application can distinguish active / stale / unknown worker state.
+  const sendHeartbeat = async (): Promise<void> => {
+    try {
+      await admin.from("worker_liveness").upsert(
+        {
+          worker_type:       WORKER_TYPE,
+          worker_id:         workerId,
+          last_heartbeat_at: new Date().toISOString(),
+        },
+        { onConflict: "worker_type" }
+      );
+    } catch {
+      // Heartbeat failure is non-fatal — processing continues.
+    }
+  };
+
+  // Send initial heartbeat immediately, then every 30 seconds.
+  void sendHeartbeat();
+  const heartbeatTimer = setInterval(() => { void sendHeartbeat(); }, WORKER_HEARTBEAT_INTERVAL_MS);
+
   runWatchWorkerLoop({ config, runBatch, stopSignal })
     .then(() => {
+      clearInterval(heartbeatTimer);
       console.log("Document watch worker exited cleanly.");
       process.exit(0);
     })
     .catch((err: unknown) => {
+      clearInterval(heartbeatTimer);
       const msg =
         err instanceof Error ? err.message.slice(0, 200) : "An unexpected error occurred.";
       console.error(`Watch worker fatal error: ${msg}`);

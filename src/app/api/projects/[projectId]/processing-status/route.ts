@@ -19,6 +19,10 @@ type RouteContext = {
 // Jobs stale for more than this are considered potentially stalled.
 const STALL_THRESHOLD_MS = 5 * 60 * 1000;
 
+// Worker liveness thresholds (milliseconds).
+const WORKER_ACTIVE_THRESHOLD_MS = 2  * 60 * 1000; //  2 min → recently active
+const WORKER_STALE_THRESHOLD_MS  = 10 * 60 * 1000; // 10 min → stale
+
 /**
  * GET /api/projects/[projectId]/processing-status
  *
@@ -65,8 +69,8 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Project not found or not accessible." }, { status: 404 });
   }
 
-  // Load documents with their latest processing job (two-query pattern).
-  const [docsResult, jobsResult] = await Promise.all([
+  // Load documents with their latest processing job plus worker liveness.
+  const [docsResult, jobsResult, livenessResult] = await Promise.all([
     supabase
       .from("documents")
       .select("id, document_role, processing_status")
@@ -80,8 +84,23 @@ export async function GET(_request: Request, context: RouteContext) {
       )
       .eq("project_id", projectId)
       .eq("job_type", "document_extraction")
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: false }),
+
+    supabase
+      .from("worker_liveness")
+      .select("last_heartbeat_at")
+      .eq("worker_type", "document_processing")
+      .maybeSingle()
   ]);
+
+  // Determine worker liveness from the heartbeat row.
+  const heartbeatAt = livenessResult.data?.last_heartbeat_at ?? null;
+  let workerLiveness: "active" | "stale" | "unknown" = "unknown";
+  if (heartbeatAt) {
+    const ageMs = Date.now() - new Date(heartbeatAt).getTime();
+    if (ageMs <= WORKER_ACTIVE_THRESHOLD_MS)      workerLiveness = "active";
+    else if (ageMs <= WORKER_STALE_THRESHOLD_MS)  workerLiveness = "stale";
+  }
 
   const docs    = docsResult.data ?? [];
   type RawJobRow = {
@@ -160,7 +179,8 @@ export async function GET(_request: Request, context: RouteContext) {
       allDocsReady,
       queuedCount,
       claimedCount,
-      stalledCount
+      stalledCount,
+      workerLiveness
     }
   });
 }

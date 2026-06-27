@@ -1,14 +1,17 @@
 /**
  * CLI entry point for the document processing worker.
  *
- * Run with: tsx --env-file .env src/server/workers/run-document-worker.ts [--batch-size=N]
+ * Run with: pnpm worker:documents [--batch-size=N]
+ *          (tsx src/server/workers/run-document-worker.ts)
  *
- * Directly invokes DocumentProcessingWorker via the Supabase admin client.
- * Does not use HTTP routes, browser authentication, or Next.js APIs.
- * Safe to call from any terminal without a browser session.
+ * In production (Railway), env vars are injected via process.env — no .env file
+ * is required. For local development a .env file is loaded automatically if
+ * it exists. Does not use HTTP routes, browser authentication, or Next.js APIs.
  */
 
 import { hostname } from "node:os";
+import { loadLocalEnv } from "./load-env";
+import { validateWorkerEnv } from "./worker-env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { SupabaseProcessingGateway } from "@/server/services/processing/supabase-processing-gateway";
 import {
@@ -117,21 +120,19 @@ const isDirectExecution =
   entryFile.endsWith("run-document-worker.js");
 
 if (isDirectExecution) {
+  // Load .env if present locally; no-op in Railway where vars are pre-injected.
+  loadLocalEnv();
+
   const parseResult = parseBatchSize(process.argv.slice(2));
   if (!parseResult.valid) {
     console.error(`Error: ${parseResult.reason}`);
     process.exit(1);
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl) {
-    console.error("Error: NEXT_PUBLIC_SUPABASE_URL is not set. Check your .env file.");
-    process.exit(2);
-  }
-  if (!serviceRoleKey) {
-    console.error("Error: SUPABASE_SERVICE_ROLE_KEY is not set. Check your .env file.");
+  try {
+    validateWorkerEnv();
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : "Worker configuration error.");
     process.exit(2);
   }
 

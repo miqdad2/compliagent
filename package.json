@@ -2,6 +2,7 @@
   "name": "compliagent",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.33.4",
   "scripts": {
     "dev": "next dev",
     "start": "next start",
@@ -9,8 +10,9 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "worker:documents": "tsx --env-file .env src/server/workers/run-document-worker.ts",
-    "worker:documents:watch": "tsx --env-file .env src/server/workers/watch-document-worker.ts"
+    "worker:documents": "tsx src/server/workers/run-document-worker.ts",
+    "worker:documents:watch": "tsx src/server/workers/watch-document-worker.ts",
+    "deploy:check": "tsx src/server/workers/check-deployment-readiness.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",

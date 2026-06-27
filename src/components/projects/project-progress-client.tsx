@@ -18,6 +18,10 @@ const STAGES = [
 const DOC_STAGE_COUNT = 2; // first two stages belong to document processing
 
 type DocWorkerState = "active" | "queued" | "stalled" | null;
+type WorkerLiveness = "active" | "stale" | "unknown";
+
+// In Next.js, process.env.NODE_ENV is inlined at build time for client bundles.
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 type ProcessingStatusResponse = {
   data?: {
@@ -29,6 +33,7 @@ type ProcessingStatusResponse = {
     queuedCount:     number;
     claimedCount:    number;
     stalledCount:    number;
+    workerLiveness?: WorkerLiveness;
   };
   error?: string;
 };
@@ -57,6 +62,7 @@ export function ProjectProgressClient({
   const [retryable, setRetryable]           = useState(false);
   const [started, setStarted]               = useState(false);
   const [docWorkerState, setDocWorkerState] = useState<DocWorkerState>(null);
+  const [workerLiveness, setWorkerLiveness] = useState<WorkerLiveness>("unknown");
   const hasTriggered = useRef(false);
 
   // Advance stage label every 4 seconds while in the review execution phase.
@@ -99,7 +105,12 @@ export function ProjectProgressClient({
         const json = await res.json() as ProcessingStatusResponse;
 
         if (json.data) {
-          const { queuedCount = 0, claimedCount = 0, stalledCount = 0 } = json.data;
+          const {
+            queuedCount = 0,
+            claimedCount = 0,
+            stalledCount = 0,
+            workerLiveness: liveness = "unknown"
+          } = json.data;
 
           if (stalledCount > 0) {
             setDocWorkerState("stalled");
@@ -110,6 +121,8 @@ export function ProjectProgressClient({
           } else {
             setDocWorkerState(null);
           }
+
+          setWorkerLiveness(liveness);
         }
 
         if (json.data?.allDocsReady) {
@@ -182,6 +195,7 @@ export function ProjectProgressClient({
     setError(null);
     setRetryable(false);
     setDocWorkerState(null);
+    setWorkerLiveness("unknown");
     setStageIndex(initialAllDocsReady ? DOC_STAGE_COUNT : 0);
     if (initialAllDocsReady) {
       void executeReview();
@@ -191,12 +205,24 @@ export function ProjectProgressClient({
   }
 
   function docPhaseHeading(): string {
+    if (IS_PRODUCTION) {
+      if (workerLiveness === "active")  return "Processing uploaded documents.";
+      if (docWorkerState === "stalled" || workerLiveness === "stale") return "Service temporarily unavailable";
+      return "Preparing documents for review";
+    }
     if (docWorkerState === "queued")  return "Waiting for the processing worker";
     if (docWorkerState === "stalled") return "Document processing may be stalled";
     return "Preparing documents for review";
   }
 
   function docPhaseDetail(): string {
+    if (IS_PRODUCTION) {
+      if (workerLiveness === "active") return "Processing uploaded documents.";
+      if (docWorkerState === "stalled" || workerLiveness === "stale") {
+        return "The document-processing service is temporarily unavailable. Please try again shortly or contact support.";
+      }
+      return "Your documents are being prepared for review.";
+    }
     if (docWorkerState === "queued")  return "Jobs are queued. The review starts automatically once the worker processes them.";
     if (docWorkerState === "stalled") return "A worker may have stopped mid-job. Restart the worker to resume.";
     return "Documents are being processed. The review will start automatically.";
@@ -239,12 +265,20 @@ export function ProjectProgressClient({
             {/* Worker hint — shown when jobs are queued but no worker is claiming them */}
             {stageIndex < DOC_STAGE_COUNT && docWorkerState === "queued" && (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5">
-                <p className="text-xs font-medium text-amber-800 mb-1">
-                  Start the document processing worker:
-                </p>
-                <code className="text-xs font-mono text-amber-900">
-                  pnpm worker:documents:watch
-                </code>
+                {IS_PRODUCTION ? (
+                  <p className="text-xs text-amber-800">
+                    Documents are queued for processing and will begin shortly.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium text-amber-800 mb-1">
+                      Start the document processing worker:
+                    </p>
+                    <code className="text-xs font-mono text-amber-900">
+                      pnpm worker:documents:watch
+                    </code>
+                  </>
+                )}
               </div>
             )}
 
@@ -253,10 +287,18 @@ export function ProjectProgressClient({
               <div className="flex items-start gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2.5">
                 <AlertTriangle className="h-4 w-4 text-orange-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-medium text-orange-800">Processing stalled</p>
+                  <p className="text-xs font-medium text-orange-800">
+                    {IS_PRODUCTION ? "Service temporarily unavailable" : "Processing stalled"}
+                  </p>
                   <p className="text-xs text-orange-700 mt-0.5">
-                    Restart the worker to resume:{" "}
-                    <code className="font-mono">pnpm worker:documents:watch</code>
+                    {IS_PRODUCTION ? (
+                      "The document-processing service is temporarily unavailable. Please try again shortly or contact support."
+                    ) : (
+                      <>
+                        Restart the worker to resume:{" "}
+                        <code className="font-mono">pnpm worker:documents:watch</code>
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
